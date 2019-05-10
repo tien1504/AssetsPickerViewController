@@ -103,6 +103,11 @@ open class AssetsPhotoViewController: UIViewController {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
     }
     
+    convenience init(pickerConfig: AssetsPickerConfig) {
+        self.init()
+        self.pickerConfig = pickerConfig
+    }
+    
     override open func loadView() {
         super.loadView()
         view = UIView()

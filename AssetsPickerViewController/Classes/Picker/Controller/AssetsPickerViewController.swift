@@ -51,16 +51,16 @@ open class AssetsPickerViewController: UINavigationController {
         commonInit()
     }
     
-    public convenience init() {
-        self.init(nibName: nil, bundle: nil)
+    public init(pickerConfig: AssetsPickerConfig! = nil) {
+        self.pickerConfig = pickerConfig
+        super.init(nibName: nil, bundle: nil)
+        commonInit()
     }
     
     func commonInit() {
-        let config = AssetsPickerConfig().prepare()
-        self.pickerConfig = config
-        AssetsManager.shared.pickerConfig = config
+        AssetsManager.shared.pickerConfig = self.pickerConfig?.prepare() ?? AssetsPickerConfig().prepare()
         let controller = AssetsPhotoViewController()
-        controller.pickerConfig = config
+        controller.pickerConfig = AssetsManager.shared.pickerConfig
         self.photoViewController = controller
         
         TinyLog.isShowInfoLog = isShowLog
