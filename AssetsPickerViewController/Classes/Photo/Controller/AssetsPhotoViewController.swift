@@ -90,6 +90,23 @@ open class AssetsPhotoViewController: UIViewController {
         return view
     }()
     
+    fileprivate lazy var loadingActivityIndicatorView: UIActivityIndicatorView = {
+        
+        if #available(iOS 13.0, *) {
+            if UITraitCollection.current.userInterfaceStyle == .dark {
+                let indicator = UIActivityIndicatorView(style: .whiteLarge)
+                return indicator
+            } else {
+                let indicator = UIActivityIndicatorView(style: .large)
+                return indicator
+            }
+        } else {
+            let indicator = UIActivityIndicatorView()
+            return indicator
+        }
+    }()
+    fileprivate lazy var loadingPlaceholderView: UIView = UIView()
+    
     var selectedAssets: [PHAsset] {
         return selectedArray
     }
@@ -111,11 +128,13 @@ open class AssetsPhotoViewController: UIViewController {
     override open func loadView() {
         super.loadView()
         view = UIView()
-        view.backgroundColor = .white
+		view.backgroundColor = .ap_background
         view.addSubview(collectionView)
         view.addSubview(emptyView)
         view.addSubview(noPermissionView)
         view.setNeedsUpdateConstraints()
+        view.addSubview(loadingPlaceholderView)
+        view.addSubview(loadingActivityIndicatorView)
     }
     
     override open func viewDidLoad() {
@@ -124,6 +143,8 @@ open class AssetsPhotoViewController: UIViewController {
         setupCommon()
         setupBarButtonItems()
         setupCollectionView()
+        setupPlaceholderView()
+        setupLoadActivityIndicatorView()
         
         updateEmptyView(count: 0)
         updateNoPermissionView()
@@ -242,7 +263,7 @@ open class AssetsPhotoViewController: UIViewController {
 extension AssetsPhotoViewController {
     
     func setupCommon() {
-        view.backgroundColor = .white
+		view.backgroundColor = .ap_background
     }
     
     func setupBarButtonItems() {
@@ -275,33 +296,66 @@ extension AssetsPhotoViewController {
         }
     }
     
+    func setupPlaceholderView() {
+        loadingPlaceholderView.isHidden = true
+        if #available(iOS 13.0, *) {
+            loadingPlaceholderView.backgroundColor = .systemBackground
+        } else {
+            loadingPlaceholderView.backgroundColor = .white
+        }
+        loadingPlaceholderView.snp.makeConstraints { (make) in
+            make.edges.equalToSuperview()
+        }
+    }
+    
+    func setupLoadActivityIndicatorView() {
+        loadingActivityIndicatorView.snp.makeConstraints { (make) in
+            make.center.equalToSuperview()
+        }
+    }
+    
     func setupAssets() {
+        loadingPlaceholderView.isHidden = false
+        loadingActivityIndicatorView.startAnimating()
         let manager = AssetsManager.shared
         manager.subscribe(subscriber: self)
-        manager.fetchAlbums()
-        manager.fetchAssets() { [weak self] photos in
-            
-            guard let `self` = self else { return }
-            
-            self.updateEmptyView(count: photos.count)
-            self.title = self.title(forAlbum: manager.selectedAlbum)
-            
-            if self.selectedArray.count > 0 {
-                self.collectionView.performBatchUpdates({ [weak self] in
-                    self?.collectionView.reloadData()
-                    }, completion: { [weak self] (finished) in
-                        guard let `self` = self else { return }
-                        // initialize preselected assets
-                        self.selectedArray.forEach({ [weak self] (asset) in
-                            if let row = photos.firstIndex(of: asset) {
-                                let indexPathToSelect = IndexPath(row: row, section: 0)
-                                self?.collectionView.selectItem(at: indexPathToSelect, animated: false, scrollPosition: UICollectionView.ScrollPosition(rawValue: 0))
-                            }
-                        })
-                        self.updateSelectionCount()
-                })
+        manager.fetchAlbums { _ in
+            manager.fetchAssets() { [weak self] photos in
+                
+                guard let `self` = self else { return }
+                
+                self.updateEmptyView(count: photos.count)
+                self.title = self.title(forAlbum: manager.selectedAlbum)
+                
+                if self.selectedArray.count > 0 {
+                    self.collectionView.performBatchUpdates({ [weak self] in
+                        self?.collectionView.reloadData()
+                        }, completion: { [weak self] (finished) in
+                            guard let `self` = self else { return }
+                            // initialize preselected assets
+                            self.selectedArray.forEach({ [weak self] (asset) in
+                                if let row = photos.firstIndex(of: asset) {
+                                    let indexPathToSelect = IndexPath(row: row, section: 0)
+                                    self?.collectionView.selectItem(at: indexPathToSelect, animated: false, scrollPosition: UICollectionView.ScrollPosition(rawValue: 0))
+                                }
+                            })
+                            self.updateSelectionCount()
+                    })
+                } else {
+                    self.collectionView.reloadData()
+                    if self.pickerConfig.assetsIsScrollToBottom {
+                        let item = self.collectionView(self.collectionView, numberOfItemsInSection: 0) - 1
+                        let lastItemIndex = NSIndexPath(item: item, section: 0)
+                        self.collectionView.scrollToItem(at: lastItemIndex as IndexPath, at: .bottom, animated: false)
+                    } else {
+                        self.collectionView.scrollToItem(at: IndexPath(row: 0, section: 0), at: .bottom, animated: false)
+                    }
+                }
+                self.loadingPlaceholderView.isHidden = true
+                self.loadingActivityIndicatorView.stopAnimating()
             }
         }
+        
     }
     
     func setupGestureRecognizer() {
@@ -327,14 +381,19 @@ extension AssetsPhotoViewController {
 extension AssetsPhotoViewController {
     
     func updateEmptyView(count: Int) {
-        if emptyView.isHidden {
-            if count == 0 {
-                emptyView.isHidden = false
+        let hasPermission = PHPhotoLibrary.authorizationStatus() == .authorized
+        if hasPermission {
+            if emptyView.isHidden {
+                if count == 0 {
+                    emptyView.isHidden = false
+                }
+            } else {
+                if count > 0 {
+                    emptyView.isHidden = true
+                }
             }
         } else {
-            if count > 0 {
-                emptyView.isHidden = true
-            }
+            emptyView.isHidden = true
         }
         logi("emptyView.isHidden: \(emptyView.isHidden), count: \(count)")
     }
@@ -367,29 +426,37 @@ extension AssetsPhotoViewController {
     }
     
     func select(album: PHAssetCollection) {
-        if AssetsManager.shared.select(album: album) {
-            // set title with selected count if exists
-            if selectedArray.count > 0 {
-                updateNavigationStatus()
-            } else {
-                title = title(forAlbum: album)
-            }
-            collectionView.reloadData()
-            
-            for asset in selectedArray {
-                if let index = AssetsManager.shared.assetArray.firstIndex(of: asset) {
-                    logi("reselecting: \(index)")
-                    collectionView.selectItem(at: IndexPath(row: index, section: 0), animated: false, scrollPosition: .init(rawValue: 0))
-                }
-            }
-            if AssetsManager.shared.assetArray.count > 0 {
-                if pickerConfig.assetsIsScrollToBottom == true {
-                    collectionView.scrollToItem(at: IndexPath(row: AssetsManager.shared.assetArray.count - 1, section: 0), at: .bottom, animated: false)
+        loadingPlaceholderView.isHidden = false
+        loadingActivityIndicatorView.startAnimating()
+        AssetsManager.shared.selectAsync(album: album, complection: { [weak self] (result) in
+            guard let `self` = self else { return }
+            if result {
+                
+                // set title with selected count if exists
+                if self.selectedArray.count > 0 {
+                    self.updateNavigationStatus()
                 } else {
-                    collectionView.scrollToItem(at: IndexPath(row: 0, section: 0), at: .bottom, animated: false)
+                    self.title = self.title(forAlbum: album)
+                }
+                self.collectionView.reloadData()
+                
+                for asset in self.selectedArray {
+                    if let index = AssetsManager.shared.assetArray.firstIndex(of: asset) {
+                        logi("reselecting: \(index)")
+                        self.collectionView.selectItem(at: IndexPath(row: index, section: 0), animated: false, scrollPosition: .init(rawValue: 0))
+                    }
+                }
+                if AssetsManager.shared.assetArray.count > 0 {
+                    if self.pickerConfig.assetsIsScrollToBottom == true {
+                        self.collectionView.scrollToItem(at: IndexPath(row: AssetsManager.shared.assetArray.count - 1, section: 0), at: .bottom, animated: false)
+                    } else {
+                        self.collectionView.scrollToItem(at: IndexPath(row: 0, section: 0), at: .bottom, animated: false)
+                    }
                 }
             }
-        }
+            self.loadingPlaceholderView.isHidden = true
+            self.loadingActivityIndicatorView.stopAnimating()
+        })
     }
     
     func select(asset: PHAsset, at indexPath: IndexPath) {
@@ -440,7 +507,7 @@ extension AssetsPhotoViewController {
     
     func updateNavigationStatus() {
         
-        doneButtonItem.isEnabled = selectedArray.count >= (pickerConfig.assetsMinimumSelectionCount > 0 ? pickerConfig.assetsMinimumSelectionCount : 1)
+        doneButtonItem.isEnabled = selectedArray.count >= (pickerConfig.assetsMinimumSelectionCount >= 0 ? pickerConfig.assetsMinimumSelectionCount : 1)
         
         let counts: (imageCount: Int, videoCount: Int) = selectedArray.reduce((0, 0)) { (result, asset) -> (Int, Int) in
             let imageCount = asset.mediaType == .image ? 1 : 0
@@ -481,15 +548,11 @@ extension AssetsPhotoViewController {
     }
     
     func presentAlbumController(animated: Bool = true) {
-        guard PHPhotoLibrary.authorizationStatus() == .authorized else { return }
-        let navigationController = UINavigationController()
-        if #available(iOS 11.0, *) {
-            navigationController.navigationBar.prefersLargeTitles = true
-        }
+        guard PHPhotoLibrary.authorizationStatus() == .authorized else { return }        
         let controller = AssetsAlbumViewController(pickerConfig: self.pickerConfig)
         controller.delegate = self
-        navigationController.viewControllers = [controller]
-        
+
+        let navigationController = UINavigationController(rootViewController: controller)
         self.navigationController?.present(navigationController, animated: animated, completion: nil)
     }
     
@@ -548,7 +611,13 @@ extension AssetsPhotoViewController: UICollectionViewDelegate {
 
     public func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         if let delegate = self.delegate {
-            return delegate.assetsPicker?(controller: picker, shouldSelect: AssetsManager.shared.assetArray[indexPath.row], at: indexPath) ?? true
+            let shouldSelect = delegate.assetsPicker?(controller: picker, shouldSelect: AssetsManager.shared.assetArray[indexPath.row], at: indexPath) ?? true
+            if shouldSelect, selectedArray.count >= pickerConfig.assetsMaximumSelectionCount, let firstSelectedAsset = selectedArray.first, let indexToDeselect = AssetsManager.shared.assetArray.firstIndex(of: firstSelectedAsset) {
+                let indexPathToDeselect = IndexPath(row: indexToDeselect, section: 0)
+                deselect(asset: firstSelectedAsset, at: indexPathToDeselect)
+                collectionView.deselectItem(at: indexPathToDeselect, animated: true)
+            }
+            return shouldSelect
         } else {
             return true
         }
@@ -704,7 +773,9 @@ extension AssetsPhotoViewController: UICollectionViewDataSourcePrefetching {
     public func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
         var assets = [PHAsset]()
         for indexPath in indexPaths {
-            assets.append(AssetsManager.shared.assetArray[indexPath.row])
+            if AssetsManager.shared.assetArray.count > indexPath.row {
+                assets.append(AssetsManager.shared.assetArray[indexPath.row])
+            }
         }
         AssetsManager.shared.cache(assets: assets, size: pickerConfig.assetCacheSize)
     }

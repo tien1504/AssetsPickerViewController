@@ -60,7 +60,7 @@ extension AssetsManager: PHPhotoLibraryChangeObserver {
     
     func synchronizeAssets(updatedAlbumIndexSets: [IndexSet], fetchMapBeforeChanges: [String: PHFetchResult<PHAsset>], changeInstance: PHChange) {
         
-        var updatedIndexSets = updatedAlbumIndexSets
+        let updatedIndexSets = updatedAlbumIndexSets
         
         // notify changes of assets
         for (section, albums) in fetchedAlbumsArray.enumerated() {
@@ -133,6 +133,8 @@ extension AssetsManager: PHPhotoLibraryChangeObserver {
                 }
             }
             
+            guard section < sortedAlbumsArray.count && section < fetchedAlbumsArray.count else { return }
+
             // update final changes in albums
             var oldSortedAlbums = sortedAlbumsArray[section]
             let newSortedAlbums = sortedAlbums(fromAlbums: fetchedAlbumsArray[section])

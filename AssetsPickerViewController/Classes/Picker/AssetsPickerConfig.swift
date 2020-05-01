@@ -82,6 +82,7 @@ open class AssetsPickerConfig {
     // MARK: Asset
     open var selectedAssets: [PHAsset]?
     open var assetsMinimumSelectionCount: Int = 1
+    open var assetsMaximumSelectionCount: Int = Int.max
     open var assetsIsScrollToBottom: Bool = true
     
     // MARK: Fetch
@@ -98,7 +99,7 @@ open class AssetsPickerConfig {
             return _assetCacheSize
         }
     }
-    open var assetPortraitColumnCount: Int = UI_USER_INTERFACE_IDIOM() == .pad ? 5 : 4
+    open var assetPortraitColumnCount: Int = UI_USER_INTERFACE_IDIOM() == .pad ? 5 : 3
     open var assetPortraitInteritemSpace: CGFloat = 1
     open var assetPortraitLineSpace: CGFloat = 1
     
@@ -108,7 +109,7 @@ open class AssetsPickerConfig {
         return CGSize(width: edge, height: edge)
     }
     
-    open var assetLandscapeColumnCount: Int = 7
+    open var assetLandscapeColumnCount: Int = UI_USER_INTERFACE_IDIOM() == .pad ? 7 : 5
     open var assetLandscapeInteritemSpace: CGFloat = 1.5
     open var assetLandscapeLineSpace: CGFloat = 1.5
     

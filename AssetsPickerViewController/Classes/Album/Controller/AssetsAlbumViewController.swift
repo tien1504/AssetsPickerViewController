@@ -67,6 +67,23 @@ open class AssetsAlbumViewController: UIViewController {
         return view
     }()
     
+    fileprivate lazy var loadingActivityIndicatorView: UIActivityIndicatorView = {
+        
+        if #available(iOS 13.0, *) {
+            if UITraitCollection.current.userInterfaceStyle == .dark {
+                let indicator = UIActivityIndicatorView(style: .whiteLarge)
+                return indicator
+            } else {
+                let indicator = UIActivityIndicatorView(style: .large)
+                return indicator
+            }
+        } else {
+            let indicator = UIActivityIndicatorView()
+            return indicator
+        }
+    }()
+    fileprivate lazy var loadingPlaceholderView: UIView = UIView()
+    
     public required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
     }
@@ -81,9 +98,11 @@ open class AssetsAlbumViewController: UIViewController {
     open override func loadView() {
         super.loadView()
         view = UIView()
-        view.backgroundColor = .white
+		view.backgroundColor = .ap_background
         
         view.addSubview(collectionView)
+        view.addSubview(loadingPlaceholderView)
+        view.addSubview(loadingActivityIndicatorView)
         view.setNeedsUpdateConstraints()
         
         AssetsManager.shared.subscribe(subscriber: self)
@@ -94,14 +113,36 @@ open class AssetsAlbumViewController: UIViewController {
         setupCommon()
         setupBarButtonItems()
         
+        if #available(iOS 11.0, *) {
+            navigationController?.navigationBar.prefersLargeTitles = true
+        }
+
         collectionView.snp.makeConstraints { (make) in
             make.edges.equalToSuperview()
         }
         
+        loadingPlaceholderView.isHidden = true
+        if #available(iOS 13.0, *) {
+            loadingPlaceholderView.backgroundColor = .systemBackground
+        } else {
+            loadingPlaceholderView.backgroundColor = .white
+        }
+        loadingPlaceholderView.snp.makeConstraints { (make) in
+            make.edges.equalToSuperview()
+        }
+        
+        loadingActivityIndicatorView.snp.makeConstraints { (make) in
+            make.center.equalToSuperview()
+        }
+        
         AssetsManager.shared.authorize(completion: { [weak self] isAuthorized in
             if isAuthorized {
+                self?.loadingPlaceholderView.isHidden = false
+                self?.loadingActivityIndicatorView.startAnimating()
                 AssetsManager.shared.fetchAlbums { (_) in
                     self?.collectionView.reloadData()
+                    self?.loadingPlaceholderView.isHidden = true
+                    self?.loadingActivityIndicatorView.stopAnimating()
                 }
             } else {
                 self?.dismiss(animated: true, completion: nil)
@@ -126,7 +167,7 @@ open class AssetsAlbumViewController: UIViewController {
 extension AssetsAlbumViewController {
     func setupCommon() {
         title = String(key: "Title_Albums")
-        view.backgroundColor = .white
+        view.backgroundColor = .ap_background
     }
     
     func setupBarButtonItems() {
@@ -222,6 +263,23 @@ extension AssetsAlbumViewController: UICollectionViewDataSource {
                 albumCell.imageView.image = nil
             }
         }
+    }
+    
+    public func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+        guard let albumCell = collectionView.cellForItem(at: indexPath) as? AssetsAlbumCellProtocol else {
+            logw("Failed to cast UICollectionViewCell.")
+            return false
+        }
+        albumCell.imageView.dim(animated: false, color: .ap_label, alpha: 0.5)
+        return true
+    }
+    
+    public func collectionView(_ collectionView: UICollectionView, didUnhighlightItemAt indexPath: IndexPath) {
+        guard let albumCell = collectionView.cellForItem(at: indexPath) as? AssetsAlbumCellProtocol else {
+            logw("Failed to cast UICollectionViewCell.")
+            return
+        }
+        albumCell.imageView.undim()
     }
 }
 
